@@ -1,16 +1,22 @@
 package com.avantplus.fintracker.data.management;
 
 import java.util.Date;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import javax.persistence.PersistenceException;
+
 import org.hibernate.HibernateException;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
+import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.query.Query;
+
+import com.avantplus.fintracker.data.entity.Category;
 import com.avantplus.fintracker.data.entity.PaymentType;
 
 public class PaymentTypeManagement {
@@ -43,13 +49,60 @@ public class PaymentTypeManagement {
 	
 	public List<PaymentType> getPaymentTypesByUserId(int userId){
 		List <PaymentType> paymentTypeList = null;
+		List <PaymentType> returnedPaymentList = null;
 		 Session session = factory.openSession();
 		Transaction transaction = null;
 		try {
 			transaction = session.beginTransaction();
 			paymentTypeList  = new ArrayList<PaymentType>();
-			paymentTypeList = session.createQuery("FROM PaymentType where isDeleted=0 and userId="+userId).list();
+			paymentTypeList = session.createQuery("Select paymentTypeID,userId,name,bankName,cutDate,payDateLimit,amountLimit,creditMonthlyInterestRate FROM PaymentType where isDeleted=0 and userId="+userId).list();
 			transaction.commit();
+			
+			//Iterate thru list to retrieve payment
+			returnedPaymentList =  new ArrayList();
+			
+			for(Iterator iterator =  paymentTypeList.iterator();iterator.hasNext();){
+				
+				Object[] objects = (Object []) iterator.next();
+				
+				PaymentType payment = new PaymentType();
+				payment.setPaymentTypeID(new Integer(objects[0].toString()).intValue());
+				payment.setUserId(new Integer(objects[1].toString()).intValue());
+				
+				if (objects[2] != null)
+					payment.setName(objects[2].toString());
+				else
+					payment.setName("");
+				
+				if (objects[3] != null)
+					payment.setBankName(objects[3].toString());
+				else
+					payment.setBankName("");
+				
+				if (objects[4] != null)
+					payment.setCutDate((Date)objects[4]);
+				else
+					payment.setCutDate(new Date());
+				
+				if (objects[5] != null)
+					payment.setPayDateLimit((Date)objects[5]);
+				else
+					payment.setPayDateLimit(new Date());
+				
+				//Verify if amount is null
+				if (objects[6] !=  null)
+					payment.setAmountLimit(new Double(objects[6].toString()).doubleValue());
+				else
+					payment.setAmountLimit(0.0);
+				
+				//Verify if interes is null
+				if (objects[7] !=  null)
+					payment.setCreditMonthlyInterestRate(new Double(objects[7].toString()).doubleValue());
+				else
+					payment.setCreditMonthlyInterestRate(0.0);
+				
+				returnedPaymentList.add(payment);
+			}
 			 
 		}catch(HibernateException ex) {
 			if (transaction != null)
@@ -59,27 +112,74 @@ public class PaymentTypeManagement {
 			session.close();
 		}
 		
-		return paymentTypeList;
+		return returnedPaymentList;
 	}
 	
-	public Integer addPayment(PaymentType paymentType) {
+	public PaymentType getPaymentTypeById(int paymentTypeId){
+		PaymentType payment = null;
 		Session session = factory.openSession();
+		Transaction transaction = null;
+		try {
+			transaction = session.beginTransaction();
+			Query query =  session.createQuery("Select paymentTypeID,userId,name,bankName,cutDate,payDateLimit,amountLimit,creditMonthlyInterestRate FROM PaymentType where isDeleted=0 and "+
+			"paymentTypeID="+paymentTypeId);
+			Object[] objects = (Object [])query.uniqueResult();
+			transaction.commit();
+			
+			payment = new PaymentType();
+			payment.setPaymentTypeID(new Integer(objects[0].toString()).intValue());
+			payment.setUserId(new Integer(objects[1].toString()).intValue());
+			payment.setName(objects[2].toString());
+			payment.setBankName(objects[3].toString());
+			payment.setCutDate((Timestamp)objects[4]);
+			payment.setPayDateLimit((Timestamp)objects[5]);
+			payment.setAmountLimit(new Double(objects[6].toString()).doubleValue());
+			payment.setCreditMonthlyInterestRate(new Double(objects[7].toString()).doubleValue());
+						
+			
+		}catch(HibernateException ex) {
+			if (transaction != null)
+					transaction.rollback();
+			ex.printStackTrace();
+		}finally {
+			session.close();
+		}
+	return payment;
+	}
+	
+	public PaymentType addPayment(PaymentType paymentType) throws ConstraintViolationException {
+		Session session = factory.openSession();
+		boolean onException = false;
 	      Transaction tx = null;
 	      Integer paymentTypeId = null;
+	      
 	      try{
-	         tx = session.beginTransaction();
+	         
+	    	 tx = session.beginTransaction();
 	         paymentTypeId = (Integer) session.save(paymentType); 
 	         tx.commit();
+	         
 	      }catch (HibernateException e) {
-	         if (tx!=null) tx.rollback();
-	         e.printStackTrace(); 
+	         
+	    	  if (tx!=null) 
+	    		  tx.rollback();
+	         
+	    	  e.printStackTrace(); 
+	    	  onException = true;
+	    	  
 	      }finally {
+	    	  
 	         session.close(); 
 	      }
-	      return paymentTypeId;
+	      
+	      //Check if an exception occurred
+	      if (onException)
+	    	  throw new ConstraintViolationException("Unique Constraint", new SQLException(),"Category Exists");
+	      
+	      return this.getPaymentTypeById(paymentTypeId);
 	}
 	
-	public void updatePaymentType(PaymentType paymentType) {
+	public PaymentType updatePaymentType(PaymentType paymentType)  throws PersistenceException {
 		Session session = factory.openSession();
 	      Transaction tx = null;
 	      try{
@@ -92,16 +192,19 @@ public class PaymentTypeManagement {
 	      }finally {
 	         session.close(); 
 	      }
+	      
+	     return this.getPaymentTypeById(paymentType.getPaymentTypeID());
 	}
 	
-	public void deletePaymentType(int paymentTypeId) {
+	public int deletePaymentType(int paymentTypeId) {
 		Session session = factory.openSession();
+		int deleted_entities = 0;
 	      Transaction tx = null;
 	      try{
 	         tx = session.beginTransaction();
 	         Query query = session.createQuery("UPDATE PaymentType set isDeleted=1 where paymentTypeID=:paymentTypeId "); 
 	         query.setParameter("paymentTypeId", paymentTypeId);
-	         query.executeUpdate();
+	         deleted_entities += query.executeUpdate();
 	         tx.commit();
 	      }catch (HibernateException e) {
 	         if (tx!=null) tx.rollback();
@@ -109,11 +212,12 @@ public class PaymentTypeManagement {
 	      }finally {
 	         session.close(); 
 	      }
+	      return deleted_entities;
 	}
 	
 	public static void main(String [] args ){
 		PaymentTypeManagement cm = new PaymentTypeManagement();
-		PaymentType pt = new PaymentType();
+		/*PaymentType pt = new PaymentType();
 		pt.setPaymentTypeID(8);
 		pt.setUserId(1);
 		pt.setName("Updated Payment Type");
@@ -122,10 +226,10 @@ public class PaymentTypeManagement {
 		pt.setCreditMonthlyInterestRate(13.24);
 		pt.setCutDate((Date)Timestamp.valueOf("2017-11-07 00:00:00"));
 		pt.setPayDateLimit((Date)Timestamp.valueOf("2017-11-07 00:00:00"));
-		cm.deletePaymentType(8);
+		cm.deletePaymentType(8);*/
 		List<PaymentType> list = cm.getPaymentTypesByUserId(1);
-		for (Iterator<PaymentType> iterator =  list.iterator(); iterator.hasNext(); ) {
-			PaymentType pay =iterator.next(); 
+		for (Iterator <PaymentType> iterator =  list.iterator(); iterator.hasNext(); ) {
+			PaymentType pay =(PaymentType)iterator.next(); 
 			System.out.println("Payment Type:"+pay.getPaymentTypeID());
 			System.out.println("Payment Type:"+pay.getName());
 			System.out.println("User ID:"+pay.getUserId());

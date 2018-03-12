@@ -2,6 +2,7 @@ package com.avantplus.fintracker.data.management;
 
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 
@@ -28,8 +29,8 @@ public class TransactionManagement {
 		try {
 			transaction = session.beginTransaction();
 			transactionList  = new ArrayList();
-			transactionList = session.createQuery("select tx.transactionID, cat.name,cst.name, pay.name, tx.amount, \r\n" + 
-					"tx.timeStamp, tx.description\r\n" + 
+			transactionList = session.createQuery("select tx.transactionId, cat.name,cst.name, pay.name, tx.amount, \r\n" + 
+					"tx.timeStamp, tx.description, tx.expenseDate\r\n" + 
 					"from UserTransactionBase as tx, Category as cat, Subcategory cst, PaymentType as pay\r\n" + 
 					"where tx.paymentTypeId = pay.paymentTypeID and\r\n" + 
 					"tx.subcategoryId = cst.subcategoryId and\r\n" + 
@@ -56,10 +57,10 @@ public class TransactionManagement {
 		try {
 			transaction = session.beginTransaction();
 			transactionList  		= new ArrayList();
-			transactionList 		= session.createQuery("select tx.transactionID, tx.userId, \r\n"+
-			"tx.subcategoryId, tx.paymentTypeId, tx.amount, tx.timeStamp, tx.description \r\n" + 
+			transactionList 		= session.createQuery("select tx.transactionId, tx.userId, \r\n"+
+			"tx.subcategoryId, tx.paymentTypeId, tx.amount, tx.timeStamp, tx.description, tx.expenseDate \r\n" + 
 			"from UserTransactionBase as tx \r\n" + 
-			"where \r\n"+
+			"where tx.isDeleted = 0 and \r\n"+
 			"tx.userId ="+userId).list();
 			
 			transaction.commit();
@@ -74,6 +75,7 @@ public class TransactionManagement {
 				utb.setPaymentTypeId(new Integer(objects[3].toString()).intValue());
 				utb.setAmount(new Double(objects[4].toString()).doubleValue());
 				utb.setTimeStamp((Timestamp)(objects[5]));
+				utb.setExpenseDate((Date)objects[7]);
 				
 				//verify if description is null
 				String description = (String) objects[6];
@@ -95,6 +97,48 @@ public class TransactionManagement {
 		}
 		
 		return transactionListFinal;
+	}
+	
+	public UserTransaction getTransactionsById(int transactionId){
+		 Session session = factory.openSession();
+		 UserTransaction utb = null;
+		 Transaction transaction = null;
+		
+		try {
+			transaction = session.beginTransaction();
+			
+			Object [] objects 		= (Object[] )session.createQuery("select tx.transactionId, tx.userId, \r\n"+
+			"tx.subcategoryId, tx.paymentTypeId, tx.amount, tx.timeStamp, tx.description, tx.expenseDate\r\n" + 
+			"from UserTransactionBase as tx \r\n" + 
+			"where \r\n"+
+			"tx.transactionId ="+transactionId).uniqueResult();
+			transaction.commit();
+					
+			utb = new UserTransaction();
+			utb.setTransactionId(new Integer(objects[0].toString()).intValue());
+			utb.setUserId(new Integer(objects[1].toString()).intValue());
+			utb.setSubCategoryId(new Integer(objects[2].toString()).intValue());
+			utb.setPaymentTypeId(new Integer(objects[3].toString()).intValue());
+			utb.setAmount(new Double(objects[4].toString()).doubleValue());
+			utb.setTimeStamp((Timestamp)(objects[5]));
+			utb.setExpenseDate((Date)objects[7]);
+			
+			//verify if description is null
+			String description = (String) objects[6];
+			if (description != null)
+				utb.setDescription(description);
+			else
+				utb.setDescription("");
+			 
+		}catch(HibernateException ex) {
+			if (transaction != null)
+					transaction.rollback();
+			ex.printStackTrace();
+		}finally {
+			session.close();
+		}
+		
+		return utb;
 	}
 	
 	public Integer addTransaction(UserTransactionBase transaction) {
@@ -130,15 +174,15 @@ public class TransactionManagement {
 	}
 	
 	
-	public void deleteTransaction(UserTransactionBase transaction) {
-		int transactionId = transaction.getTransactionId();
+	public int deleteTransaction(int transactionId) {
 		Session session = factory.openSession();
 	      Transaction tx = null;
+	      int num_entities = -1;
 	      try{
 	         tx = session.beginTransaction();
 	         Query query = session.createQuery("UPDATE UserTransactionBase set isDeleted=1 where transactionId=:transactionId "); 
 	         query.setParameter("transactionId", transactionId);
-	         query.executeUpdate();
+	         num_entities = query.executeUpdate();
 	         tx.commit();
 	      }catch (HibernateException e) {
 	         if (tx!=null) tx.rollback();
@@ -146,6 +190,7 @@ public class TransactionManagement {
 	      }finally {
 	         session.close(); 
 	      }
+	      return num_entities;
 	}
 	
 	public static void main(String [] args) {

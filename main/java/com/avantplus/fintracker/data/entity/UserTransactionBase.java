@@ -1,6 +1,7 @@
 package com.avantplus.fintracker.data.entity;
 
 import java.sql.Timestamp;
+import java.util.Date;
 
 import javax.persistence.*;
 
@@ -31,6 +32,9 @@ public class UserTransactionBase {
 	
 	@Column(name="is_deleted")
 	private int isDeleted;
+	
+	@Column(name="expense_date")
+	private Date expenseDate;
 	
 	public int getUserId() {
 		return userId;
@@ -88,6 +92,12 @@ public class UserTransactionBase {
 	}
 	public void setAmount(Double amount) {
 		this.amount = amount;
+	}
+	public Date getExpenseDate() {
+		return expenseDate;
+	}
+	public void setExpenseDate(Date expenseDate) {
+		this.expenseDate = expenseDate;
 	}
 
 }

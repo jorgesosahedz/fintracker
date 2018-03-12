@@ -1,12 +1,17 @@
 package com.avantplus.fintracker.data.management;
 
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+
+import javax.persistence.PersistenceException;
+
 import org.hibernate.HibernateException;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
+import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.query.Query;
 import com.avantplus.fintracker.data.entity.Subcategory;
 
@@ -46,7 +51,8 @@ private SessionFactory factory;
 		try {
 			transaction = session.beginTransaction();
 			categorySubTypeList  = new ArrayList<Subcategory>();
-			categorySubTypeList = session.createQuery("FROM Subcategory where isDeleted=0 and userId="+userId).list();
+			Query query = session.createQuery("FROM Subcategory where isDeleted=0 and (userId="+userId+" or userId=0)");
+			categorySubTypeList = query.list();
 			transaction.commit();
 			 
 		}catch(HibernateException ex) {
@@ -59,25 +65,63 @@ private SessionFactory factory;
 		
 		return categorySubTypeList;
 	}
-		
-	public Integer addSubcategory(Subcategory subcategory) {
+	
+	public Subcategory getSubcategoryById(int subcategoryId){
+		Subcategory subcategory = null;
 		Session session = factory.openSession();
+		Transaction transaction = null;
+		try {
+			transaction = session.beginTransaction();
+			Query query =  session.createQuery("Select subcategoryId, categoryId, name, userId FROM Subcategory where isDeleted=0 and "+
+			"subcategoryId="+subcategoryId);
+			Object[] objects = (Object [])query.uniqueResult();
+			subcategory = new Subcategory();
+			
+			//check if results were returned
+			if (objects == null)
+				return subcategory;
+			
+			subcategory.setSubcategoryId(new Integer(objects[0].toString()).intValue());
+			subcategory.setCategoryId(new Integer(objects[1].toString()).intValue());
+			subcategory.setName(objects[2].toString());
+			subcategory.setUserId(new Integer(objects[3].toString()).intValue());
+			transaction.commit();			
+			
+		}catch(HibernateException ex) {
+			if (transaction != null)
+					transaction.rollback();
+			ex.printStackTrace();
+		}finally {
+			session.close();
+		}
+	return subcategory;
+	}
+		
+	public Subcategory addSubcategory(Subcategory subcategory) throws ConstraintViolationException{
+		Session session = factory.openSession();
+		
+		boolean onException = false;
 	      Transaction tx = null;
-	      Integer categorysubTypeId = null;
+	      Integer subcategoryId = null;
 	      try{
 	         tx = session.beginTransaction();
-	         categorysubTypeId = (Integer) session.save(subcategory); 
+	         subcategoryId = (Integer) session.save(subcategory); 
 	         tx.commit();
 	      }catch (HibernateException e) {
 	         if (tx!=null) tx.rollback();
 	         e.printStackTrace(); 
+	         onException = true;
 	      }finally {
 	         session.close(); 
 	      }
-	      return categorysubTypeId;
+	      //Check if an exception ocurred
+	      if (onException)
+	    	  throw new ConstraintViolationException("Unique Constraint", new SQLException(),"Subcategry Exists");
+	      
+	      return this.getSubcategoryById(subcategoryId);
 	}
 	
-	public void updateSubcategory(Subcategory subcategory) {
+	public Subcategory updateSubcategory(Subcategory subcategory) throws PersistenceException{
 		Session session = factory.openSession();
 	      Transaction tx = null;
 	      try{
@@ -90,16 +134,19 @@ private SessionFactory factory;
 	      }finally {
 	         session.close(); 
 	      }
+	      
+	      return this.getSubcategoryById(subcategory.getSubcategoryId());
 	}
 	
-	public void deleteSubcategory(int subcategoryId) {
+	public int deleteSubcategory(int subcategoryId) {
 		Session session = factory.openSession();
+		int deleted_entities = 0;
 	      Transaction tx = null;
 	      try{
 	         tx = session.beginTransaction();
 	         Query query = session.createQuery("UPDATE Subcategory set isDeleted=1 where subcategoryId=:categoryId "); 
 	         query.setParameter("categoryId", subcategoryId);
-	         query.executeUpdate();
+	         deleted_entities += query.executeUpdate();
 	         tx.commit();
 	      }catch (HibernateException e) {
 	         if (tx!=null) tx.rollback();
@@ -107,6 +154,7 @@ private SessionFactory factory;
 	      }finally {
 	         session.close(); 
 	      }
+	      return deleted_entities;
 	}
 	
 	
